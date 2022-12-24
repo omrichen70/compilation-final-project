@@ -223,7 +223,7 @@ let rec sexpr_of_expr = function
       scheme_sexpr_list_of_sexpr_list
         (List.map sexpr_of_expr args) in
     ScmPair (proc, args)
-  | _ -> raise (X_syntax "Unknown form");;
+  | _ -> raise (X_syntax "Unknown form in sexpr_of_expr");;
 
 let string_of_expr expr =
   Printf.sprintf "%a" sprint_sexpr (sexpr_of_expr expr);;
@@ -767,7 +767,7 @@ module Tag_Parser : TAG_PARSER = struct
 
   let rec tag_parse sexpr =
     match sexpr with
-    | ScmVoid | ScmBoolean _ | ScmChar _ | ScmString _ | ScmNumber _ ->
+    | ScmVoid | ScmBoolean _ | ScmChar _ | ScmString _ | ScmNumber _ | ScmNil ->
       ScmConst sexpr
     | ScmPair (ScmSymbol "quote", ScmPair (sexpr, ScmNil)) -> 
       ScmConst(sexpr)
@@ -886,7 +886,7 @@ module Tag_Parser : TAG_PARSER = struct
        | _ -> raise (X_syntax "malformed application"))
     | sexpr -> raise (X_syntax
                         (Printf.sprintf
-                           "Unknown form: \n%a\n"
+                           "Unknown form: \n %a \n"
                            sprint_sexpr sexpr));;
 
 
@@ -1397,13 +1397,13 @@ module Code_Generation : CODE_GENERATION = struct
 
   let add_sub_constants =
     let rec run sexpr = match sexpr with
-      | ScmVoid -> raise X_not_yet_implemented
-      | ScmNil -> raise X_not_yet_implemented
+      | ScmVoid -> []
+      | ScmNil -> []
       | ScmBoolean _ | ScmChar _ | ScmString _ | ScmNumber _ ->
-        raise X_not_yet_implemented
-      | ScmSymbol sym -> raise X_not_yet_implemented
+        [sexpr]
+      | ScmSymbol sym -> [ScmString(sym)]@[sexpr]
       | ScmPair (car, cdr) -> (run car) @ (run cdr) @ [sexpr]
-      | ScmVector sexprs -> raise X_not_yet_implemented
+      | ScmVector sexprs -> runs sexprs @[sexpr]
     and runs sexprs =
       List.fold_left (fun full sexpr -> full @ (run sexpr)) [] sexprs
     in fun exprs' ->
@@ -1417,10 +1417,10 @@ module Code_Generation : CODE_GENERATION = struct
     | QuadFloat of float
     | ConstPtr of int;;
 
-  let rec search_constant_address sexpr consts_table= 
+  let rec search_constant_address sexpr consts_table = 
     match consts_table with
-    | (x, loc, _ ) :: rest -> if(x == sexpr) then loc else search_constant_address sexpr rest
-    | [] -> raise (X_this_should_not_happen "not found");;
+    | (x, loc, _ ) :: rest -> if(x = sexpr) then loc else search_constant_address sexpr rest
+    | [] -> raise (X_this_should_not_happen "Couldn't find constant address");;
 
   let const_repr sexpr loc table = match sexpr with
     | ScmVoid -> ([RTTI "T_void"], 1)
@@ -1604,24 +1604,24 @@ module Code_Generation : CODE_GENERATION = struct
 
   let collect_free_vars =
     let rec run = function
-      | ScmConst' _ -> raise X_not_yet_implemented
+      | ScmConst' _ -> []
       | ScmVarGet' (Var' (v, Free)) -> [v]
-      | ScmVarGet' _ -> raise X_not_yet_implemented
-      | ScmIf' (test, dit, dif) -> raise X_not_yet_implemented
+      | ScmVarGet' _ -> []
+      | ScmIf' (test, dit, dif) -> (run test)@(run dit)@(run dif)
       | ScmSeq' exprs' -> runs exprs'
       | ScmOr' exprs' -> runs exprs'
-      | ScmVarSet' (Var' (v, Free), expr') -> raise X_not_yet_implemented
-      | ScmVarSet' (_, expr') -> raise X_not_yet_implemented
-      | ScmVarDef' (Var' (v, Free), expr') -> raise X_not_yet_implemented
+      | ScmVarSet' (Var' (v, Free), expr') -> [v]@(run expr')
+      | ScmVarSet' (_, expr') -> run expr'
+      | ScmVarDef' (Var' (v, Free), expr') -> [v]@(run expr')
       | ScmVarDef' (_, expr') -> run expr'
-      | ScmBox' (Var' (v, Free)) -> raise X_not_yet_implemented
+      | ScmBox' (Var' (v, Free)) -> [v]
       | ScmBox' _ -> []
-      | ScmBoxGet' (Var' (v, Free)) -> raise X_not_yet_implemented
+      | ScmBoxGet' (Var' (v, Free)) -> [v]
       | ScmBoxGet' _ -> []
-      | ScmBoxSet' (Var' (v, Free), expr') -> raise X_not_yet_implemented
+      | ScmBoxSet' (Var' (v, Free), expr') -> [v] @ (run expr')
       | ScmBoxSet' (_, expr') -> run expr'
-      | ScmLambda' (_, _, expr') -> raise X_not_yet_implemented
-      | ScmApplic' (expr', exprs', _) -> raise X_not_yet_implemented
+      | ScmLambda' (_, _, expr') -> run expr'
+      | ScmApplic' (expr', exprs', _) -> (run expr')@(runs exprs')
     and runs exprs' =
       List.fold_left
         (fun vars expr' -> vars @ (run expr'))
@@ -1725,16 +1725,20 @@ module Code_Generation : CODE_GENERATION = struct
     let consts = make_constants_table exprs' in
     let free_vars = make_free_vars_table exprs' in
     let rec run params env = function
-      | ScmConst' sexpr -> raise X_not_yet_implemented
+      | ScmConst' sexpr -> 
+        let const_address = search_constant_address sexpr consts in
+        Printf.sprintf 
+          "\tmov rax, %s+%d\n"
+          label_start_of_constants_table const_address
       | ScmVarGet' (Var' (v, Free)) ->
         let label = search_free_var_table v free_vars in
         Printf.sprintf
           "\tmov rax, qword [%s]\n"
           label
-      | ScmVarGet' (Var' (v, Param minor)) -> raise X_not_yet_implemented
+      | ScmVarGet' (Var' (v, Param minor)) -> raise (X_syntax "ScmVarGet code gen fails")
       | ScmVarGet' (Var' (v, Bound (major, minor))) ->
-        raise X_not_yet_implemented
-      | ScmIf' (test, dit, dif) -> raise X_not_yet_implemented
+        raise (X_syntax "ScmVarGet code_gen fails")
+      | ScmIf' (test, dit, dif) -> raise (X_syntax "ScmIf code_gen fails")
       | ScmSeq' exprs' ->
         String.concat "\n"
           (List.map (run params env) exprs')
@@ -1760,26 +1764,26 @@ module Code_Generation : CODE_GENERATION = struct
            | None -> run params env (ScmConst' (ScmBoolean false)))
         in asm_code
       | ScmVarSet' (Var' (v, Free), expr') ->
-        raise X_not_yet_implemented
+        raise (X_syntax "ScmVarSet code_gen fails")
       | ScmVarSet' (Var' (v, Param minor), expr') ->
-        raise X_not_yet_implemented
+        raise (X_syntax "ScmVarSet2 code_gen fails")
       | ScmVarSet' (Var' (v, Bound (major, minor)), expr') ->
-        raise X_not_yet_implemented
+        raise (X_syntax "ScmVarSet3 code_gen fails")
       | ScmVarDef' (Var' (v, Free), expr') ->
         let label = search_free_var_table v free_vars in
         (run params env expr')
         ^ (Printf.sprintf "\tmov qword [%s], rax\n" label)
         ^ "\tmov rax, sob_void\n"
       | ScmVarDef' (Var' (v, Param minor), expr') ->
-        raise X_not_yet_supported
+        raise (X_syntax "ScmVarDef code_gen fails")
       | ScmVarDef' (Var' (v, Bound (major, minor)), expr') ->
-        raise X_not_yet_supported
+        raise (X_syntax "ScmVarDef2 code_gen fails")
       | ScmBox' (Var' (v, Param minor)) -> raise X_not_yet_implemented
-      | ScmBox' _ -> raise X_not_yet_implemented
+      | ScmBox' _ -> raise (X_syntax "ScmBox code_gen fails")
       | ScmBoxGet' var' ->
         (run params env (ScmVarGet' var'))
         ^ "\tmov rax, qword [rax]\n"
-      | ScmBoxSet' (var', expr') -> raise X_not_yet_implemented
+      | ScmBoxSet' (var', expr') -> raise (X_syntax "ScmBoxSet code_gen fails")
       | ScmLambda' (params', Simple, body) ->
         let label_loop_env = make_lambda_simple_loop_env ()
         and label_loop_env_end = make_lambda_simple_loop_env_end ()
@@ -1840,9 +1844,12 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tleave\n"
         ^ (Printf.sprintf "\tret 8 * (2 + %d)\n" (List.length params'))
         ^ (Printf.sprintf "%s:\t; new closure is in rax\n" label_end)
-      | ScmLambda' (params', Opt opt, body) -> raise X_not_yet_implemented
-      | ScmApplic' (proc, args, Non_Tail_Call) -> raise X_not_yet_implemented
-      | ScmApplic' (proc, args, Tail_Call) -> raise X_not_yet_implemented
+      | ScmLambda' (params', Opt opt, body) -> raise (X_syntax "OptLambda code_gen fails")
+      | ScmApplic' (proc, args, Non_Tail_Call) -> raise (X_syntax "Applic code_gen fails")
+      | ScmApplic' (proc, args, Tail_Call) -> raise (X_syntax
+                                                       (Printf.sprintf
+                                                          "Applic2 problem with: %a"
+                                                          sprint_expr' proc))
     and runs params env exprs' =
       List.map
         (fun expr' ->
@@ -1869,7 +1876,7 @@ module Code_Generation : CODE_GENERATION = struct
 
   let compile_scheme_string file_out user =
     let init = file_to_string "init.scm" in
-    let source_code = init ^ user in
+    let source_code = user in
     let sexprs = (PC.star Reader.nt_sexpr source_code 0).found in
     let exprs = List.map Tag_Parser.tag_parse sexprs in
     let exprs' = List.map Semantic_Analysis.semantics exprs in
