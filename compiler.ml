@@ -1191,10 +1191,10 @@ module Semantic_Analysis : SEMANTIC_ANALYSIS = struct
     | ScmApplic' (proc, args, app_kind) ->
       ScmApplic' (auto_box proc, List.map auto_box args, app_kind);;
 
+  (*important: REMOVED ANNOTATE_TAIL_CALL*)
   let semantics expr =
     auto_box
-      (annotate_tail_calls
-         (annotate_lexical_address expr));;
+      (annotate_lexical_address expr);;
 
 end;; (* end of module Semantic_Analysis *)
 
@@ -1735,10 +1735,24 @@ module Code_Generation : CODE_GENERATION = struct
         Printf.sprintf
           "\tmov rax, qword [%s]\n"
           label
-      | ScmVarGet' (Var' (v, Param minor)) -> raise (X_syntax "ScmVarGet code gen fails")
+      | ScmVarGet' (Var' (v, Param minor)) -> 
+        Printf.sprintf
+          "\tmov rax, qword [rbp + 8 * (4 + %d)]\n"
+          minor
       | ScmVarGet' (Var' (v, Bound (major, minor))) ->
-        raise (X_syntax "ScmVarGet code_gen fails")
-      | ScmIf' (test, dit, dif) -> raise (X_syntax "ScmIf code_gen fails")
+        "\tmov rax, qword [rbp + 8 * 2]\n"
+        ^ (Printf.sprintf "\tmov rax, qword [rax + 8 * %d]\n" major)
+        ^ (Printf.sprintf "\tmov rax, qword [rax + 8 * %d]\n" minor)
+      | ScmIf' (test, dit, dif) -> 
+        let if_else_label = make_if_else () in 
+        let if_end_label = make_if_end () in 
+        (run params env test)
+        ^ "\tcmp rax, sob_boolean_false\n"
+        ^ (Printf.sprintf "\tje %s\n" if_else_label)
+        ^ (run params env dit)
+        ^ (Printf.sprintf "\tjmp %s\n %s:" if_end_label if_else_label)
+        ^ (run params env dif)
+        ^ (Printf.sprintf "\t%s:\n" if_end_label)
       | ScmSeq' exprs' ->
         String.concat "\n"
           (List.map (run params env) exprs')
@@ -1764,11 +1778,20 @@ module Code_Generation : CODE_GENERATION = struct
            | None -> run params env (ScmConst' (ScmBoolean false)))
         in asm_code
       | ScmVarSet' (Var' (v, Free), expr') ->
-        raise (X_syntax "ScmVarSet code_gen fails")
+        let var_address_in_fvars_list = search_free_var_table v free_vars in 
+        (run params env expr')
+        ^ (Printf.sprintf "\tmov qword [%s], rax\n" var_address_in_fvars_list)
+        ^ "\tmov rax, sob_void\n"
       | ScmVarSet' (Var' (v, Param minor), expr') ->
-        raise (X_syntax "ScmVarSet2 code_gen fails")
+        (run params env expr')
+        ^ (Printf.sprintf "\tmov qword [rbp + 8 * (4 + %d)], rax\n" minor)
+        ^ "\tmov rax, sob_void\n"
       | ScmVarSet' (Var' (v, Bound (major, minor)), expr') ->
-        raise (X_syntax "ScmVarSet3 code_gen fails")
+        (run params env expr')
+        ^ "\tmov rbx, qword [rbp + 8 * 2]\n"
+        ^ (Printf.sprintf "\tmov rbx, qword [rbx + 8 * %d]\n" major)
+        ^ (Printf.sprintf "\tmov qword [rbx + 8 * %d], rax\n" minor)
+        ^ "\tmov rax, sob_void"
       | ScmVarDef' (Var' (v, Free), expr') ->
         let label = search_free_var_table v free_vars in
         (run params env expr')
@@ -1845,7 +1868,24 @@ module Code_Generation : CODE_GENERATION = struct
         ^ (Printf.sprintf "\tret 8 * (2 + %d)\n" (List.length params'))
         ^ (Printf.sprintf "%s:\t; new closure is in rax\n" label_end)
       | ScmLambda' (params', Opt opt, body) -> raise (X_syntax "OptLambda code_gen fails")
-      | ScmApplic' (proc, args, Non_Tail_Call) -> raise (X_syntax "Applic code_gen fails")
+      | ScmApplic' (proc, args, Non_Tail_Call) -> 
+        let num_of_arguments = List.length args in
+        let arguments = 
+          (String.concat "\tpush rax\n" (List.map (fun (expression) -> run params env expression) (List.rev args))) in
+        let arguments = if(num_of_arguments > 0) then arguments^"\tpush rax\n" else arguments in
+        let add_num_of_args = Printf.sprintf "\tpush %d\n" num_of_arguments in 
+        let proceure = run params env proc in 
+        arguments ^ add_num_of_args ^ proceure ^ 
+        (Printf.sprintf 
+           "\tassert_closure(rax)
+           mov SOB_CLOSURE_ENV(rbx), rax
+            push rbx
+            mov SOB_CLOSURE_CODE(rcx), rax
+            call rcx
+                add rsp, 8 * 1
+                pop rbx
+                lea rsp, [rsp + (8*rbx)]
+            ")
       | ScmApplic' (proc, args, Tail_Call) -> raise (X_syntax
                                                        (Printf.sprintf
                                                           "Applic2 problem with: %a"
@@ -1876,6 +1916,7 @@ module Code_Generation : CODE_GENERATION = struct
 
   let compile_scheme_string file_out user =
     let init = file_to_string "init.scm" in
+    (*important: REMOVED init ^ user*)
     let source_code = user in
     let sexprs = (PC.star Reader.nt_sexpr source_code 0).found in
     let exprs = List.map Tag_Parser.tag_parse sexprs in
