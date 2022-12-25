@@ -1873,19 +1873,17 @@ module Code_Generation : CODE_GENERATION = struct
         let arguments = 
           (String.concat "\tpush rax\n" (List.map (fun (expression) -> run params env expression) (List.rev args))) in
         let arguments = if(num_of_arguments > 0) then arguments^"\tpush rax\n" else arguments in
-        let add_num_of_args = Printf.sprintf "\tpush %d\n" num_of_arguments in 
+        let add_num_of_args = Printf.sprintf "\tpush %d ;pushin num of args\n" num_of_arguments in 
         let proceure = run params env proc in 
-        arguments ^ add_num_of_args ^ proceure ^ 
-        (Printf.sprintf 
-           "\tassert_closure(rax)
-           mov SOB_CLOSURE_ENV(rbx), rax
-            push rbx
-            mov SOB_CLOSURE_CODE(rcx), rax
-            call rcx
-                add rsp, 8 * 1
-                pop rbx
-                lea rsp, [rsp + (8*rbx)]
-            ")
+        arguments ^ add_num_of_args ^ proceure 
+        ^ "\tassert_closure(rax)\n"
+        ^ "\tmov SOB_CLOSURE_ENV(rbx), rax\n"
+        ^ "\tpush rbx\n"
+        ^ "\tmov SOB_CLOSURE_CODE(rcx), rax\n"
+        ^ "\tcall rcx\n"
+        ^ "\t\tadd rsp, (8 * 1)\n"
+        ^ "\t\tpop rbx\n"
+        ^ "\t\tlea rsp, [rsp + (8*rbx)]\n"
       | ScmApplic' (proc, args, Tail_Call) -> raise (X_syntax
                                                        (Printf.sprintf
                                                           "Applic2 problem with: %a"
