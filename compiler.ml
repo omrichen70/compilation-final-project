@@ -1867,7 +1867,88 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tleave\n"
         ^ (Printf.sprintf "\tret 8 * (2 + %d)\n" (List.length params'))
         ^ (Printf.sprintf "%s:\t; new closure is in rax\n" label_end)
-      | ScmLambda' (params', Opt opt, body) -> raise (X_syntax "OptLambda code_gen fails")
+      | ScmLambda' (params', Opt opt, body) -> 
+        let label_loop_env = make_lambda_opt_loop_env ()
+        and label_loop_env_end = make_lambda_opt_loop_env_end ()
+        and label_loop_params = make_lambda_opt_loop_params ()
+        and label_loop_params_end = make_lambda_opt_loop_params_end ()
+        and label_code = make_lambda_opt_code ()
+        and label_arity_exact = make_lambda_opt_arity_exact ()
+        and label_arity_more = make_lambda_opt_arity_more ()
+        and label_arity_ok = make_lambda_opt_stack_ok ()
+        and label_loop = make_lambda_opt_loop ()
+        and label_loop_exit = make_lambda_opt_loop_exit ()
+        and label_end = make_lambda_opt_end ()
+        in
+        "\tmov rdi, (1 + 8 + 8)\t; sob closure LambdaOpt\n"
+        ^ "\tcall malloc\n"
+        ^ "\tpush rax\n"
+        ^ (Printf.sprintf "\tmov rdi, 8 * %d\t; new rib LambdaOpt\n" params)
+        ^ "\tcall malloc\n"
+        ^ "\tpush rax\n"
+        ^ (Printf.sprintf "\tmov rdi, 8 * %d\t; extended env LambdaOpt\n" (env + 1))
+        ^ "\tcall malloc\n"
+        ^ "\tmov rdi, ENV\n"
+        ^ "\tmov rsi, 0\n"
+        ^ "\tmov rdx, 1\n"
+        ^ (Printf.sprintf "%s:\t; ext_env[i + 1] <-- env[i] LambdaOpt\n"
+             label_loop_env)
+        ^ (Printf.sprintf "\tcmp rsi, %d\n" (env + 1))
+        ^ (Printf.sprintf "\tje %s\n" label_loop_env_end)
+        ^ "\tmov rcx, qword [(rbp + 8 * 2) + 8 * rsi]\n"
+        ^ "\tmov qword [rax + 8 * rdx], rcx\n"
+        ^ "\tinc rsi\n"
+        ^ "\tinc rdx\n"
+        ^ (Printf.sprintf "\tjmp %s\n" label_loop_env)
+        ^ (Printf.sprintf "%s:\n" label_loop_env_end)
+        ^ "\tpop rbx\n"
+        ^ "\tmov rsi, 0\n"
+        ^ (Printf.sprintf "%s:\t; copy params LambdaOpt\n" label_loop_params)
+        ^ (Printf.sprintf "\tcmp rsi, %d\n" params)
+        ^ (Printf.sprintf "\tje %s\n" label_loop_params_end)
+        ^ "\tmov rdx, qword [rbp + 8 * rsi + 8 * 4]\n"
+        ^ "\tmov qword [rbx + 8 * rsi], rdx\n"
+        ^ "\tinc rsi\n"
+        ^ (Printf.sprintf "\tjmp %s\n" label_loop_params)
+        ^ (Printf.sprintf "%s:\n" label_loop_params_end)
+        ^ "\tmov qword [rax], rbx\t; ext_env[0] <-- new_rib LambdaOpt\n"
+        ^ "\tmov rbx, rax\n"
+        ^ "\tpop rax\n"
+        ^ "\tmov byte [rax], T_closure\n"
+        ^ "\tmov SOB_CLOSURE_ENV(rax), rbx\n"
+        ^ (Printf.sprintf "\tmov SOB_CLOSURE_CODE(rax), %s\n" label_code)
+        ^ (Printf.sprintf "\tjmp %s\n" label_end)
+        (*STARTING LAMBDA-OPT BODY*)
+        ^ (Printf.sprintf "%s:\t; LambdaOpt body\n" label_code)
+        ^ (Printf.sprintf "\tcmp qword [rsp + 8 * 2], %d\t;comparing args count with what we got - LambdaOpt\n"
+             (List.length params'))
+        ^ (Printf.sprintf "\tje %s\t;if it matches, add empty list in the end\n" label_arity_exact)
+        ^ (Printf.sprintf "\tjg %s\t;if its more, do what needed\n" label_arity_more)
+        (*IF THERE's NO MATCH, GO TO ERROR LABEL*)
+        ^ "\tpush qword [rsp + 8 * 2]\n"
+        ^ (Printf.sprintf "\tpush %d\n" (List.length params'))
+        ^ "\tjmp L_error_incorrect_arity_simple\n"
+        ^ "\tmov rcx, qword [rsp + 8 * 2] \t;pushing num of args we got into rcx\n"
+        ^ (Printf.sprintf "\tsub rcx, %d \t;calc the number of extra args\n" (List.length params'))
+        ^ "\tmov rdi, (1 + 8 + 8)\t; size of pair\n"
+        ^ "\tcall malloc\n"
+        ^ "\tpush rax\n"
+        ^ "\tmov SOB_PAIR_CAR(rax), [rbp + (rbp + 8 * 3) * 8]\n"
+        ^ "\tmov SOB_PAIR_CDR(rax), sob_nil\n"
+        ^ "\tmov byte [rax], T_pair\n"
+        ^ "\tmov r9, rax ;save the address of the start of list\n"
+        ^ "\tsub rcx, 1\n"
+        ^ "\tcmp rcx, 0\n"
+        ^ "\tje ."
+        ^ "\tpush qword [rsp + 8 * 2]\n"
+        ^ (Printf.sprintf "\tpush %d\n" (List.length params'))
+        ^ "\tjmp L_error_incorrect_arity_simple\n"
+        ^ (Printf.sprintf "%s:\n" label_arity_ok)
+        ^ "\tenter 0, 0\n"
+        ^ (run (List.length params') (env + 1) body)
+        ^ "\tleave\n"
+        ^ (Printf.sprintf "\tret 8 * (2 + %d)\n" (List.length params'))
+        ^ (Printf.sprintf "%s:\t; new LambdaOpt closure is in rax \n" label_end)
       | ScmApplic' (proc, args, Non_Tail_Call) -> 
         let num_of_arguments = List.length args in
         let arguments = 
