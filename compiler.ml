@@ -1831,7 +1831,7 @@ module Code_Generation : CODE_GENERATION = struct
              label_loop_env)
         ^ (Printf.sprintf "\tcmp rsi, %d\n" (env + 1))
         ^ (Printf.sprintf "\tje %s\n" label_loop_env_end)
-        ^ "\tmov rcx, qword [rdi + 8 * rsi]\n"
+        ^ "\tmov rcx, qword [(rbp + 8 * 2) + 8 * rsi]\n"
         ^ "\tmov qword [rax + 8 * rdx], rcx\n"
         ^ "\tinc rsi\n"
         ^ "\tinc rdx\n"
@@ -1877,13 +1877,8 @@ module Code_Generation : CODE_GENERATION = struct
         let proceure = run params env proc in 
         arguments ^ add_num_of_args ^ proceure 
         ^ "\tassert_closure(rax)\n"
-        ^ "\tmov SOB_CLOSURE_ENV(rbx), rax\n"
-        ^ "\tpush rbx\n"
-        ^ "\tmov SOB_CLOSURE_CODE(rcx), rax\n"
-        ^ "\tcall rcx\n"
-        ^ "\t\tadd rsp, (8 * 1)\n"
-        ^ "\t\tpop rbx\n"
-        ^ "\t\tlea rsp, [rsp + (8*rbx)]\n"
+        ^ "\tpush SOB_CLOSURE_ENV(rax)\n"
+        ^ "\tcall SOB_CLOSURE_CODE(rax)\n"
       | ScmApplic' (proc, args, Tail_Call) -> raise (X_syntax
                                                        (Printf.sprintf
                                                           "Applic2 problem with: %a"
