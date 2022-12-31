@@ -1874,8 +1874,8 @@ module Code_Generation : CODE_GENERATION = struct
           (String.concat "\tpush rax\n" (List.map (fun (expression) -> run params env expression) (List.rev args))) in
         let arguments = if(num_of_arguments > 0) then arguments^"\tpush rax\n" else arguments in
         let add_num_of_args = Printf.sprintf "\tpush %d ;pushin num of args\n" num_of_arguments in 
-        let proceure = run params env proc in 
-        arguments ^ add_num_of_args ^ proceure 
+        let procedure = run params env proc in 
+        arguments ^ add_num_of_args ^ procedure 
         ^ "\tassert_closure(rax)\n"
         ^ "\tpush SOB_CLOSURE_ENV(rax)\n"
         ^ "\tcall SOB_CLOSURE_CODE(rax)\n"
