@@ -1194,8 +1194,7 @@ module Semantic_Analysis : SEMANTIC_ANALYSIS = struct
   (*important: REMOVED ANNOTATE_TAIL_CALL*)
   let semantics expr =
     auto_box
-      (annotate_tail_calls
-         (annotate_lexical_address expr));;
+      (annotate_lexical_address expr);;
 
 end;; (* end of module Semantic_Analysis *)
 
@@ -1731,6 +1730,11 @@ module Code_Generation : CODE_GENERATION = struct
   let make_lambda_opt_params_finish_copy_shrink_loop =
     make_make_label ".L_lambda_opt_finish_params_copy_shrink_loop";;
 
+  let make_lambda_opt_create_list_for_extra_args =
+    make_make_label ".L_lambda_opt_create_list_for_extra_args";;
+  let make_lambda_opt_finish_create_list_for_extra_args =
+    make_make_label ".L_lambda_opt_finish_create_list_for_extra_args";;
+
   let code_gen exprs' =
     let consts = make_constants_table exprs' in
     let free_vars = make_free_vars_table exprs' in
@@ -1893,6 +1897,8 @@ module Code_Generation : CODE_GENERATION = struct
         and lable_finish_copy_params_enlarge = make_lambda_opt_params_finish_copy_enlarge_loop ()
         and label_copy_params_shrink = make_lambda_opt_params_copy_shrink_loop ()
         and lable_finish_copy_params_shrink = make_lambda_opt_params_finish_copy_shrink_loop ()
+        and label_create_list_for_extra_args = make_lambda_opt_create_list_for_extra_args ()
+        and lable_finish_create_list_for_extra_args = make_lambda_opt_finish_create_list_for_extra_args ()
         in
         "\tmov rdi, (1 + 8 + 8)\t; sob closure LambdaOpt\n"
         ^ "\tcall malloc\n"
@@ -1975,28 +1981,49 @@ module Code_Generation : CODE_GENERATION = struct
         ^ (Printf.sprintf "%s:\n" lable_finish_copy_params_enlarge)
         ^ "\tmov qword [r9], sob_nil\n"
         ^ (Printf.sprintf "\tjmp %s\n" label_arity_ok)
-        ^ (Printf.sprintf "\tjg %s\t;if its more, do what needed\n" label_arity_more)
-
-        ^ "\tmov rcx, qword [rsp + 8 * 2] \t;pushing num of args we got into rcx\n"
-        ^ (Printf.sprintf "\tsub rcx, %d \t;calc the number of extra args\n" (List.length params'))
-        (*CASE OF MORE ARGUMENTS, NEED TO ADD THE REST IN A LIST*)
-        ^ (Printf.sprintf "%s:\t; case of more args\n" label_arity_more)
-        ^ "\tmov rdi, (1 + 8 + 8)\t; size of pair\n"
+        (*CASE OF MORE ARGS*)
+        ^ (Printf.sprintf "%s:\t;case of more arguments than required\n" label_arity_more)
+        ^ "\tmov r8, qword [rsp + 8 * 2] \t;r8 <-- num of args\n"
+        ^ "\tmov rdx, sob_nil\t;rdx <-- holds the list of extra args\n"
+        ^ "\tlea r8, [rsp + (8 * r8) + (8 * 2)]\t;r8 <-- holds the address of last param, we'll add it first to the list\n"
+        ^ "\tmov rcx, qword [rsp + 8 * 2]\t;rcx <-- get's the number of arguments received\n"
+        ^ (Printf.sprintf "\tsub rcx, %d\t;rcx <-- rcx - params , updates RCX to hold the length of the list we build\n" (List.length params'))
+        ^ (Printf.sprintf "%s:\t;loop of copying extra params in to list\n" label_create_list_for_extra_args)
+        ^ "\tcmp rcx, 0\t; stop when rcx hits zero\n"
+        ^ (Printf.sprintf "\tje %s\t; if finished, go to do the shrinking\n" lable_finish_create_list_for_extra_args)
+        ^ "\tmov rdi, (1 + 8 + 8)\t;size of a pair -> two words + byte for T_pair\n"
         ^ "\tcall malloc\n"
-        ^ "\tmov byte[rax], T_pair\n"
-        ^ "\tmov SOB_PAIR_CAR(rax), r9\n"
-        ^ "\tmov SOB_PAIR_CDR(rax), r10\n"
-        ^ "\tpush rax\n"
-        ^ "\tmov rbx, PARAM(2)\n"
-        ^ "\tmov SOB_PAIR_CAR(rax), rbx\n"
-        ^ "\tmov SOB_PAIR_CDR(rax), sob_nil\n"
-        ^ "\tmov byte [rax], T_pair\n"
-        ^ "\tdec rcx\n"
-        ^ "\tcmp rcx, 0\n"
-        ^ (Printf.sprintf "\tje %s ;jump to label_arity_ok\n" label_arity_ok)
-        ^ "\tpush qword [rsp + 8 * 2]\n"
-        ^ (Printf.sprintf "\tpush %d\n" (List.length params'))
-        ^ "\tjmp L_error_incorrect_arity_simple\n"
+        ^ "\tmov rbx, qword [r8]\t;rbx <-- gets the parameter at address r8\n"
+        ^ "\tmov byte [rax], T_pair\t;mark that it's a pair\n"
+        ^ "\tmov SOB_PAIR_CAR(rax), rbx\t;car: rbx\n"
+        ^ "\tmov SOB_PAIR_CDR(rax), rdx\t;cdr: rdx\n"
+        ^ "\tmov rdx, rax\t; rdx gets the pair, next loop it will be inserted as the CDR\n"
+        ^ "\tsub r8, 8*1\t;r8 <-- r8 - 8, move on to the next item\n"
+        ^ "\tdec rcx\t;rcx <-- rcx - 1, decrement rcx\n"
+        ^ (Printf.sprintf "\tjmp %s\n" label_create_list_for_extra_args)
+        ^ (Printf.sprintf "%s:\t;finish with the params in the case of shrink\n" lable_finish_create_list_for_extra_args)
+        ^ "\tmov r8, qword [rsp + 8 * 2]\t;r8 <-- count of args\n"
+        ^ "\tlea r9, [rsp + (8 * r8) + (8 * 2)]\t;r9 <-- gets the address of last param, to replace with list\n"
+        ^ "\tmov qword [r9], rdx\t;r9 <-- the list from RDX\n"
+        ^ "\tmov rcx, qword [rsp + 8 * 2]\n"
+        ^ (Printf.sprintf "\tsub rcx, %d\n" (List.length params'))
+        ^ "\tsub r9, 8 * 1\n"
+        ^ "\tmov rdi, qword [rsp + (8 * 4)]\n"
+        ^ "\tmov qword [r9], rdi\n"
+        ^ "\tsub r9, 8 * 1\n"
+        ^ "\tmov rdi, qword [rsp + (8 * 3)]\n"
+        ^ "\tmov qword [r9], rdi\n"
+        ^ "\tsub r9, 8 * 1\n"
+        ^ "\tmov rdi, qword [rsp + (8 * 2)]\n"
+        ^ (Printf.sprintf "\tsub rdi, %d\n" (List.length params'))
+        ^ "\tmov qword [r9], rdi\t; push num of args in correct place\n"
+        ^ "\tsub r9, 8 * 1\n"
+        ^ "\tmov rdi, qword [rsp + (8 * 1)]\n"
+        ^ "\tmov qword [r9], rdi\t; push env in correct place\n"
+        ^ "\tsub r9, 8 * 1\n"
+        ^ "\tmov rdi, qword [rsp]\n"
+        ^ "\tmov qword [r9], rdi\t; push ret address in correct place\n"
+        ^ "\tmov rsp, r9\n"
         ^ (Printf.sprintf "%s:\n" label_arity_ok)
         ^ "\tenter 0, 0\n"
         ^ (run (List.length params') (env + 1) body)
