@@ -1735,6 +1735,11 @@ module Code_Generation : CODE_GENERATION = struct
   let make_lambda_opt_finish_create_list_for_extra_args =
     make_make_label ".L_lambda_opt_finish_create_list_for_extra_args";;
 
+  let make_lambda_opt_copy_required_params =
+    make_make_label ".L_lambda_opt_copy_required_params";;
+  let make_lambda_opt_finish_copy_required_params =
+    make_make_label ".L_lambda_opt_finish_copy_required_params";;
+
   let code_gen exprs' =
     let consts = make_constants_table exprs' in
     let free_vars = make_free_vars_table exprs' in
@@ -1893,12 +1898,14 @@ module Code_Generation : CODE_GENERATION = struct
         and label_loop = make_lambda_opt_loop ()
         and label_loop_exit = make_lambda_opt_loop_exit ()
         and label_end = make_lambda_opt_end ()
-        and lable_copy_params_enlarge = make_lambda_opt_params_copy_enlarge_loop ()
-        and lable_finish_copy_params_enlarge = make_lambda_opt_params_finish_copy_enlarge_loop ()
+        and label_copy_params_enlarge = make_lambda_opt_params_copy_enlarge_loop ()
+        and label_finish_copy_params_enlarge = make_lambda_opt_params_finish_copy_enlarge_loop ()
         and label_copy_params_shrink = make_lambda_opt_params_copy_shrink_loop ()
-        and lable_finish_copy_params_shrink = make_lambda_opt_params_finish_copy_shrink_loop ()
+        and label_finish_copy_params_shrink = make_lambda_opt_params_finish_copy_shrink_loop ()
         and label_create_list_for_extra_args = make_lambda_opt_create_list_for_extra_args ()
-        and lable_finish_create_list_for_extra_args = make_lambda_opt_finish_create_list_for_extra_args ()
+        and label_finish_create_list_for_extra_args = make_lambda_opt_finish_create_list_for_extra_args ()
+        and label_copy_required_params = make_lambda_opt_copy_required_params ()
+        and label_finish_copy_required_params = make_lambda_opt_finish_copy_required_params ()
         in
         "\tmov rdi, (1 + 8 + 8)\t; sob closure LambdaOpt\n"
         ^ "\tcall malloc\n"
@@ -1969,16 +1976,16 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tadd r8, 8*1\n"
         ^ "\tadd r9, 8*1\n"
         ^ (Printf.sprintf "\tmov rcx, %d\n" (List.length(params')))
-        ^ (Printf.sprintf "%s:\t; loop of copying params in case of exact\n" lable_copy_params_enlarge)
+        ^ (Printf.sprintf "%s:\t; loop of copying params in case of exact\n" label_copy_params_enlarge)
         ^ "\tcmp rcx, 0\n"
-        ^ (Printf.sprintf "\tje %s\n" lable_finish_copy_params_enlarge)
+        ^ (Printf.sprintf "\tje %s\n" label_finish_copy_params_enlarge)
         ^ "\tmov rdi, qword [r8]\n"
         ^ "\tmov qword [r9], rdi\n"
         ^ "\tadd r8, 8*1\n"
         ^ "\tadd r9, 8*1\n"
         ^ "\tdec rcx\n"
-        ^ (Printf.sprintf "\tjmp %s\n" lable_copy_params_enlarge)
-        ^ (Printf.sprintf "%s:\n" lable_finish_copy_params_enlarge)
+        ^ (Printf.sprintf "\tjmp %s\n" label_copy_params_enlarge)
+        ^ (Printf.sprintf "%s:\n" label_finish_copy_params_enlarge)
         ^ "\tmov qword [r9], sob_nil\n"
         ^ (Printf.sprintf "\tjmp %s\n" label_arity_ok)
         (*CASE OF MORE ARGS*)
@@ -1990,7 +1997,7 @@ module Code_Generation : CODE_GENERATION = struct
         ^ (Printf.sprintf "\tsub rcx, %d\t;rcx <-- rcx - params , updates RCX to hold the length of the list we build\n" (List.length params'))
         ^ (Printf.sprintf "%s:\t;loop of copying extra params in to list\n" label_create_list_for_extra_args)
         ^ "\tcmp rcx, 0\t; stop when rcx hits zero\n"
-        ^ (Printf.sprintf "\tje %s\t; if finished, go to do the shrinking\n" lable_finish_create_list_for_extra_args)
+        ^ (Printf.sprintf "\tje %s\t; if finished, go to do the shrinking\n" label_finish_create_list_for_extra_args)
         ^ "\tmov rdi, (1 + 8 + 8)\t;size of a pair -> two words + byte for T_pair\n"
         ^ "\tcall malloc\n"
         ^ "\tmov rbx, qword [r8]\t;rbx <-- gets the parameter at address r8\n"
@@ -2001,18 +2008,22 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tsub r8, 8*1\t;r8 <-- r8 - 8, move on to the next item\n"
         ^ "\tdec rcx\t;rcx <-- rcx - 1, decrement rcx\n"
         ^ (Printf.sprintf "\tjmp %s\n" label_create_list_for_extra_args)
-        ^ (Printf.sprintf "%s:\t;finish with the params in the case of shrink\n" lable_finish_create_list_for_extra_args)
+        ^ (Printf.sprintf "%s:\t;finish with the params in the case of shrink\n" label_finish_create_list_for_extra_args)
         ^ "\tmov r8, qword [rsp + 8 * 2]\t;r8 <-- count of args\n"
         ^ "\tlea r9, [rsp + (8 * r8) + (8 * 2)]\t;r9 <-- gets the address of last param, to replace with list\n"
         ^ "\tmov qword [r9], rdx\t;r9 <-- the list from RDX\n"
-        ^ "\tmov rcx, qword [rsp + 8 * 2]\n"
-        ^ (Printf.sprintf "\tsub rcx, %d\n" (List.length params'))
+        ^ (Printf.sprintf "\tmov rcx, %d\n" (List.length params'))
+        (* ^ (Printf.sprintf "\tsub rcx, %d\n" ((List.length params')+1)) *)
+        ^ (Printf.sprintf "%s:\n" label_copy_required_params)
+        ^ "\tcmp rcx, 0\n"
+        ^ (Printf.sprintf "\tje %s\t;when finished, go to move env, return address and move rsp\n" label_finish_copy_required_params)
         ^ "\tsub r9, 8 * 1\n"
-        ^ "\tmov rdi, qword [rsp + (8 * 4)]\n"
+        ^ "\tlea r10, [rsp + (8 * (rcx + 2))]\n"
+        ^ "\tmov rdi, qword [r10]\n"
         ^ "\tmov qword [r9], rdi\n"
-        ^ "\tsub r9, 8 * 1\n"
-        ^ "\tmov rdi, qword [rsp + (8 * 3)]\n"
-        ^ "\tmov qword [r9], rdi\n"
+        ^ "\tdec rcx\n"
+        ^ (Printf.sprintf "\tjmp %s\n" label_copy_required_params)
+        ^ (Printf.sprintf "%s:\t;move env, return address and rsp\n" label_finish_copy_required_params)
         ^ "\tsub r9, 8 * 1\n"
         ^ "\tmov rdi, qword [rsp + (8 * 2)]\n"
         ^ (Printf.sprintf "\tsub rdi, %d\n" (List.length params'))
