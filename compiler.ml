@@ -2013,7 +2013,6 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tlea r9, [rsp + (8 * r8) + (8 * 2)]\t;r9 <-- gets the address of last param, to replace with list\n"
         ^ "\tmov qword [r9], rdx\t;r9 <-- the list from RDX\n"
         ^ (Printf.sprintf "\tmov rcx, %d\n" (List.length params'))
-        (* ^ (Printf.sprintf "\tsub rcx, %d\n" ((List.length params')+1)) *)
         ^ (Printf.sprintf "%s:\n" label_copy_required_params)
         ^ "\tcmp rcx, 0\n"
         ^ (Printf.sprintf "\tje %s\t;when finished, go to move env, return address and move rsp\n" label_finish_copy_required_params)
