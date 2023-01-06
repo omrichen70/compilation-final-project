@@ -2072,29 +2072,31 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tpush qword [rbp + 8 * 1]\n"
         ^ "\tpush qword [rbp]\n"
         ^ "\tmov rcx, qword [rsp + 8 * 3]\t;initializing the counter\n"
-        ^ "\tadd rcx, 2\t;adding 2 to the counter\n"
+        ^ "\tmov r11, rcx\n"
+        ^ "\tadd rcx, 4\t;adding 4 to the counter\n"
         ^ "\tmov rsi, 0\n"
         ^ "\tmov rdi, 8\n"
-        ^ "\tmov r10, qword [rbp]\n"
+        ^ "\tmov r10, rbp\n"
         ^ "\tmov rdx, qword [r10+ (8 * 3)]\t;num of args of last frame\n"
         ^ (Printf.sprintf "%s:\n" label_applic_tc_loop)
         ^ "\tcmp rcx, 0\n"
         ^ (Printf.sprintf "\tje %s\n" label_applic_tc_finish_loop)
         ^ "\tmov r8, r10\n"
-        ^ "\tsub r8, r11\n"
+        ^ "\tsub r8, rdi\n"
         ^ "\tlea r8, [r8]\t;taking the param from new frame\n"
         ^ "\tmov r9, qword [r8]\n"
         ^ "\tmov r12, rdx\n"
         ^ "\tsub r12, rsi\n"
-        ^ "\tlea r8, [r10 + ((4 + r12 ) * 8)]\n"
+        ^ "\tlea r8, [r10 + ((3 + r12) * 8)]\n"
         ^ "\tmov qword [r8], r9\n"
         ^ "\tinc rsi\n"
         ^ "\tadd rdi, 8\n"
-        ^ (Printf.sprintf "jmp %s\n" label_applic_tc_loop)
+        ^ "\tdec rcx\n"
+        ^ (Printf.sprintf "\tjmp %s\n" label_applic_tc_loop)
         ^ (Printf.sprintf "%s:\n" label_applic_tc_finish_loop)
-        ^ "\tmov rcx, qword [rsp + 8 * 3]\t;initializing the counter\n"
-        ^ "\tsub rdx, rcx\n"
-        ^ "\tmov rsp, qword [rbp + rdx]\n"
+        ^ "\tsub rdx, r11\n"
+        ^ "\tlea rsp, [rbp + (rdx * 8)]\n"
+        ^ "\tpop rbp\n"
         ^ "\tjmp SOB_CLOSURE_CODE(rax)\n"
     and runs params env exprs' =
       List.map
