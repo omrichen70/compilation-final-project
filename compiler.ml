@@ -2031,7 +2031,7 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tlea r9, [rsp + (8 * r8) + (8 * 2)]\t;r9 <-- gets the address of last param, to replace with list\n"
         ^ "\tmov qword [r9], rdx\t;r9 <-- the list from RDX\n"
         ^ (Printf.sprintf "\tmov rcx, %d\n" (List.length params'))
-        ^ (Printf.sprintf "%s:\n" label_copy_required_params)
+        ^ (Printf.sprintf "%s:\t; copy the regular parameters\n" label_copy_required_params)
         ^ "\tcmp rcx, 0\n"
         ^ (Printf.sprintf "\tje %s\t;when finished, go to move env, return address and move rsp\n" label_finish_copy_required_params)
         ^ "\tsub r9, 8 * 1\n"
@@ -2054,7 +2054,7 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tmov rsp, r9\n"
         ^ (Printf.sprintf "%s:\n" label_arity_ok)
         ^ "\tenter 0, 0\n"
-        ^ (run (List.length params') (env + 1) body)
+        ^ (run (List.length params' + 1) (env + 1) body)
         ^ "\tleave\n"
         ^ (Printf.sprintf "\tret AND_KILL_FRAME(%d)\n" (List.length params' + 1))
         ^ (Printf.sprintf "%s:\t; new LambdaOpt closure is in rax \n" label_end)
@@ -2063,7 +2063,7 @@ module Code_Generation : CODE_GENERATION = struct
         let arguments = 
           (String.concat "\tpush rax\n" (List.map (fun (expression) -> run params env expression) (List.rev args))) in
         let arguments = if(num_of_arguments > 0) then arguments^"\tpush rax\n" else arguments in
-        let add_num_of_args = Printf.sprintf "\tpush %d ;pushin num of args\n" num_of_arguments in 
+        let add_num_of_args = Printf.sprintf "\tpush %d ;pushing num of args received\n" num_of_arguments in 
         let procedure = run params env proc in 
         arguments ^ add_num_of_args ^ procedure 
         ^ "\tassert_closure(rax)\n"
