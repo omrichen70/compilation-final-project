@@ -1823,15 +1823,27 @@ module Code_Generation : CODE_GENERATION = struct
         ^ (Printf.sprintf "\tmov qword [%s], rax\n" label)
         ^ "\tmov rax, sob_void\n"
       | ScmVarDef' (Var' (v, Param minor), expr') ->
-        raise (X_syntax "ScmVarDef code_gen fails")
+        raise X_not_yet_supported
       | ScmVarDef' (Var' (v, Bound (major, minor)), expr') ->
-        raise (X_syntax "ScmVarDef2 code_gen fails")
-      | ScmBox' (Var' (v, Param minor)) -> raise X_not_yet_implemented
+        raise X_not_yet_supported
+      | ScmBox' (Var' (v, Param minor)) -> 
+        "\tmov rdi, 8\n"
+        ^ "\tcall malloc\n"
+        ^ "\tmov rbx, rax\n"
+        ^ (run params env (ScmVarGet' (Var' (v, Param minor))))
+        ^ "\tmov qword [rbx], rax\n"
+        ^ (Printf.sprintf "\tmov qword [rbp + 8 * (4 + %d)], rbx\n" minor)
+        ^ "\tmov rax, sob_void\n"
       | ScmBox' _ -> raise (X_syntax "ScmBox code_gen fails")
       | ScmBoxGet' var' ->
         (run params env (ScmVarGet' var'))
         ^ "\tmov rax, qword [rax]\n"
-      | ScmBoxSet' (var', expr') -> raise (X_syntax "ScmBoxSet code_gen fails")
+      | ScmBoxSet' (var', expr') -> 
+        (run params env expr')
+        ^ "\tmov rbx, rax\n"
+        ^ (run params env (ScmVarGet' var'))
+        ^ "\tmov qword [rax], rbx\n"
+        ^ "\tmov rax, sob_void\n"
       | ScmLambda' (params', Simple, body) ->
         let label_loop_env = make_lambda_simple_loop_env ()
         and label_loop_env_end = make_lambda_simple_loop_env_end ()
@@ -1854,9 +1866,9 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tmov rdx, 1\n"
         ^ (Printf.sprintf "%s:\t; ext_env[i + 1] <-- env[i]\n"
              label_loop_env)
-        ^ (Printf.sprintf "\tcmp rsi, %d\n" (env + 1))
+        ^ (Printf.sprintf "\tcmp rsi, %d\n" env)
         ^ (Printf.sprintf "\tje %s\n" label_loop_env_end)
-        ^ "\tmov rcx, qword [(rbp + 8 * 2) + 8 * rsi]\n"
+        ^ "\tmov rcx, qword [rdi + 8 * rsi]\n"
         ^ "\tmov qword [rax + 8 * rdx], rcx\n"
         ^ "\tinc rsi\n"
         ^ "\tinc rdx\n"
@@ -1926,9 +1938,9 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tmov rdx, 1\n"
         ^ (Printf.sprintf "%s:\t; ext_env[i + 1] <-- env[i] LambdaOpt\n"
              label_loop_env)
-        ^ (Printf.sprintf "\tcmp rsi, %d\n" (env + 1))
+        ^ (Printf.sprintf "\tcmp rsi, %d\n" env)
         ^ (Printf.sprintf "\tje %s\n" label_loop_env_end)
-        ^ "\tmov rcx, qword [(rbp + 8 * 2) + 8 * rsi]\n"
+        ^ "\tmov rcx, qword [rdi + 8 * rsi]\n"
         ^ "\tmov qword [rax + 8 * rdx], rcx\n"
         ^ "\tinc rsi\n"
         ^ "\tinc rdx\n"
