@@ -572,58 +572,37 @@ bind_primitive:
 ;;; PLEASE IMPLEMENT THIS PROCEDURE
 L_code_ptr_bin_apply:
         ; ENTER
+        ; mov rdi, PARAM(0) ;check that first param is a function
+        ; assert_closure(rdi)
         ; mov rcx, COUNT ;rcx holds the number of params received for apply
-        ; mov rdx, rcx
-        ; dec rdx
-        ; mov rdx, PARAM(rdx) ;rdx holds the pointer to the list
-        ; mov r10, rdx ;r10 holds a copy of a pointer to the list
-        ; mov rdi, 0 ;counter for length of list
+        ; cmp rcx, 2 ;check that only 2 params were passed
+        ; jne L_error_arg_count_2 
+        ; mov rdx, PARAM(1) ;rdx saves the pointed to the list
+        ; mov rsi, rdx ;rsi also saves the pointer to the beginning of the list
+        ; cmp byte [rdx], T_nil
+        ; je .L_bin_apply_finish
 
-        ; .L_get_list_length:
-        ; cmp r10, sob_nil
-        ; je .L_copy_args
-        ; inc rdi
-        ; mov r10, SOB_PAIR_CDR(r10)
-        ; jmp .L_get_list_length
-
-        ; .L_copy_args:
-        ; sub rsp, 8 * 1
-        ; mov qword [rsp], sob_nil
-        ; shl rdi, 3
-        ; sub rsp, rdi ;create enough space for the args of the list
-        ; mov r11, rcx
-        ; sub r11, 2
-        ; mov r15, 0
-
-        ; .L_copy_args_loop:
-        ; cmp rdx, sob_nil
-        ; je .L_copy_simple_args_loop
-        ; mov rdx, SOB_PAIR_CAR(r10)
-        ; mov [rsp + (8 * r15)], qword [rdx]
+        ; mov r8, 0 ;r8 holds the length of the list
+        ; .L_find_list_len:
+        ; cmp SOB_PAIR_CDR(rdx), sob_nil
+        ; je .L_finish_list_len
+        ; inc r8
         ; mov rdx, SOB_PAIR_CDR(rdx)
-        ; inc r15
-        ; jmp .L_copy_args_loop
+        ; jmp .L_find_list_len
 
-        ; .L_copy_simple_args_loop:
-        ; cmp r11, 0
-        ; je .L_finish_and_call_function
-        ; push PARAM(r11)
-        ; inc r15
-        ; dec r11
-        ; jmp .L_copy_simple_args_loop
+        ; .L_finish_list_len:
+        ; inc r8
 
-        ; .L_finish_and_call_function:
-        ; push r15
-        ; mov rax, PARAM(0)
-        ; assert_closure(rax)
-        ; push SOB_CLOSURE_ENV(rax)
-        ; push qword [rbp + 8 * 1]
-        ; push qword [rbp + 8]
-        ; jmp SOB_CLOSURE_CODE(rax)
+        ; jmp .L_bin_apply_finish
+
+
+        ; .L_bin_apply_finish:
+        ; mov rax, sob_boolean_true
+        ; leave
+        ; ret AND_KILL_FRAME(2)
 
 
 
-        
 	
 L_code_ptr_is_null:
         ENTER
