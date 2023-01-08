@@ -2082,10 +2082,10 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tassert_closure(rax)\n"
         ^ "\tpush SOB_CLOSURE_ENV(rax)\n"
         ^ "\tpush qword [rbp + 8 * 1]\n"
-        ^ "\tpush qword [rbp]\n"
-        ^ "\tmov rcx, qword [rsp + 8 * 3]\t;initializing the counter\n"
+        (* ^ "\tpush qword [rbp]\n" *)
+        ^ "\tmov rcx, qword [rsp + 8 * 2]\t;initializing the counter\n"
         ^ "\tmov r11, rcx\n"
-        ^ "\tadd rcx, 4\t;adding 4 to the counter\n"
+        ^ "\tadd rcx, 3\t;adding 4 to the counter\n"
         ^ "\tmov rsi, 0\n"
         ^ "\tmov rdi, 8\n"
         ^ "\tmov r10, rbp\n"
