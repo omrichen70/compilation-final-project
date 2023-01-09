@@ -133,8 +133,6 @@ let sprint_sexprs chan sexprs =
   Printf.sprintf "[%s]"
     (String.concat "; "
        (List.map string_of_sexpr sexprs));;
-
-
 let rec sexpr_of_expr = function
   | ScmConst(ScmVoid) -> ScmVoid
   | ScmConst((ScmBoolean _) as sexpr) -> sexpr
@@ -921,6 +919,7 @@ module type SEMANTIC_ANALYSIS = sig
   val annotate_tail_calls : expr' -> expr'
   val auto_box : expr' -> expr'
   val semantics : expr -> expr'  
+
 end;; (* end of signature SEMANTIC_ANALYSIS *)
 
 module Semantic_Analysis : SEMANTIC_ANALYSIS = struct
@@ -1743,6 +1742,9 @@ module Code_Generation : CODE_GENERATION = struct
 
   let make_applic_tc_loop =
     make_make_label ".L_applic_tc_loop";;
+
+  let make_applic_tc_start =
+    make_make_label ".L_applic_tc_start";;
   let make_applic_tc_finish_loop =
     make_make_label ".L_applic_tc_finish_loop";;
 
@@ -1761,9 +1763,9 @@ module Code_Generation : CODE_GENERATION = struct
           "\tmov rax, qword [%s]\n"
           label
       | ScmVarGet' (Var' (v, Param minor)) -> 
-        Printf.sprintf
-          "\tmov rax, qword [rbp + 8 * (4 + %d)]\n"
-          minor
+        (Printf.sprintf
+           "\tmov rax, qword [rbp + 8 * (4 + %d)]\n"
+           minor)
       | ScmVarGet' (Var' (v, Bound (major, minor))) ->
         "\tmov rax, qword [rbp + 8 * 2]\n"
         ^ (Printf.sprintf "\tmov rax, qword [rax + 8 * %d]\n" major)
@@ -1810,7 +1812,6 @@ module Code_Generation : CODE_GENERATION = struct
       | ScmVarSet' (Var' (v, Param minor), expr') ->
         (run params env expr')
         ^ (Printf.sprintf "\tmov qword [rbp + 8 * (4 + %d)], rax\n" minor)
-        ^ "\tmov rax, sob_void\n"
       | ScmVarSet' (Var' (v, Bound (major, minor)), expr') ->
         (run params env expr')
         ^ "\tmov rbx, qword [rbp + 8 * 2]\n"
@@ -1833,7 +1834,7 @@ module Code_Generation : CODE_GENERATION = struct
         ^ (run params env (ScmVarGet' (Var' (v, Param minor))))
         ^ "\tmov qword [rbx], rax\n"
         ^ (Printf.sprintf "\tmov qword [rbp + 8 * (4 + %d)], rbx\n" minor)
-        ^ "\tmov rax, sob_void\n"
+        ^ "\tmov rax, rbx\n"
       | ScmBox' _ -> raise (X_syntax "ScmBox code_gen fails")
       | ScmBoxGet' var' ->
         (run params env (ScmVarGet' var'))
@@ -2042,8 +2043,8 @@ module Code_Generation : CODE_GENERATION = struct
         ^ (Printf.sprintf "\tjmp %s\n" label_copy_required_params)
         ^ (Printf.sprintf "%s:\t;move env, return address and rsp\n" label_finish_copy_required_params)
         ^ "\tsub r9, 8 * 1\n"
-        ^ "\tmov rdi, qword [rsp + (8 * 2)]\n"
-        ^ (Printf.sprintf "\tsub rdi, %d\n" (List.length params'))
+        (* ^ "\tmov rdi, qword [rsp + (8 * 2)]\n" ; next line was ----- sub rdi, %d --- params'.length*)
+        ^ (Printf.sprintf "\tmov rdi, %d\n" ((List.length params') + 1))
         ^ "\tmov qword [r9], rdi\t; push num of args in correct place\n"
         ^ "\tsub r9, 8 * 1\n"
         ^ "\tmov rdi, qword [rsp + (8 * 1)]\n"
@@ -2054,9 +2055,9 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tmov rsp, r9\n"
         ^ (Printf.sprintf "%s:\n" label_arity_ok)
         ^ "\tenter 0, 0\n"
-        ^ (run (List.length params' + 1) (env + 1) body)
+        ^ (run ((List.length params') + 1) (env + 1) body)
         ^ "\tleave\n"
-        ^ (Printf.sprintf "\tret AND_KILL_FRAME(%d)\n" (List.length params' + 1))
+        ^ (Printf.sprintf "\tret AND_KILL_FRAME(%d)\n" ((List.length params') + 1))
         ^ (Printf.sprintf "%s:\t; new LambdaOpt closure is in rax \n" label_end)
       | ScmApplic' (proc, args, Non_Tail_Call) -> 
         let num_of_arguments = List.length args in
@@ -2070,6 +2071,7 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tpush SOB_CLOSURE_ENV(rax)\n"
         ^ "\tcall SOB_CLOSURE_CODE(rax)\n"
       | ScmApplic' (proc, args, Tail_Call) -> 
+        let label_applic_tc_start = make_applic_tc_start () in
         let label_applic_tc_loop = make_applic_tc_loop () in 
         let label_applic_tc_finish_loop = make_applic_tc_finish_loop () in
         let num_of_arguments = List.length args in
@@ -2079,13 +2081,14 @@ module Code_Generation : CODE_GENERATION = struct
         let add_num_of_args = Printf.sprintf "\tpush %d ;pushin num of args\n" num_of_arguments in 
         let procedure = run params env proc in 
         arguments ^ add_num_of_args ^ procedure 
+        ^ (Printf.sprintf "%s:\n" label_applic_tc_start)
         ^ "\tassert_closure(rax)\n"
         ^ "\tpush SOB_CLOSURE_ENV(rax)\n"
         ^ "\tpush qword [rbp + 8 * 1]\n"
-        (* ^ "\tpush qword [rbp]\n" *)
-        ^ "\tmov rcx, qword [rsp + 8 * 2]\t;initializing the counter\n"
+        ^ "\tpush qword [rbp]\n"
+        ^ "\tmov rcx, qword [rsp + 8 * 3]\t;initializing the counter\n"
         ^ "\tmov r11, rcx\n"
-        ^ "\tadd rcx, 3\t;adding 4 to the counter\n"
+        ^ "\tadd rcx, 4\t;adding 4 to the counter\n"
         ^ "\tmov rsi, 0\n"
         ^ "\tmov rdi, 8\n"
         ^ "\tmov r10, rbp\n"
@@ -2106,8 +2109,11 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tdec rcx\n"
         ^ (Printf.sprintf "\tjmp %s\n" label_applic_tc_loop)
         ^ (Printf.sprintf "%s:\n" label_applic_tc_finish_loop)
+        ^ "\tmov rsp, rbp\n"
         ^ "\tsub rdx, r11\n"
-        ^ "\tlea rsp, [rbp + (rdx * 8)]\n"
+        ^ "\tshl rdx, 3\n"
+        ^ "\tadd rsp, rdx\n"
+        (* ^ "\tlea rsp, [rbp + (rdx * 8)]\n" *)
         ^ "\tpop rbp\n"
         ^ "\tjmp SOB_CLOSURE_CODE(rax)\n"
     and runs params env exprs' =
@@ -2143,7 +2149,7 @@ module Code_Generation : CODE_GENERATION = struct
     let exprs' = List.map Semantic_Analysis.semantics exprs in
     let asm_code = code_gen exprs' in
     (string_to_file file_out asm_code;
-     Printf.printf "!!! Compilation finished. Time to assemble!\n");;  
+     Printf.printf "\n!!! Compilation finished. Time to assemble!\n");;  
 
   let compile_scheme_file file_in file_out =
     compile_scheme_string file_out (file_to_string file_in);;

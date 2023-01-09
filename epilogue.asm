@@ -571,14 +571,13 @@ bind_primitive:
 
 ;;; PLEASE IMPLEMENT THIS PROCEDURE
 L_code_ptr_bin_apply:
-        ENTER
-        mov r10, rbp ;r10 holds the base pointer
-        mov rdi, PARAM(0) ;check that first param is a function
+        mov r10, rsp ;r10 holds the base pointer
+        mov rdi, qword [rsp + 8 * 3] ;check that first param is a function
         assert_closure(rdi)
-        mov rcx, COUNT ;rcx holds the number of params received for apply
+        mov rcx, qword [rsp + 8 * 2] ;rcx holds the number of params received for apply
         cmp rcx, 2 ;check that only 2 params were passed
         jne L_error_arg_count_2 
-        mov rdx, PARAM(1) ;rdx saves the pointed to the list
+        mov rdx, qword [rsp + 8 * 4] ;rdx saves the pointed to the list
         mov rsi, rdx ;rsi also saves the pointer to the beginning of the list
         cmp byte [rdx], T_nil
         je .L_bin_apply_finish
@@ -622,7 +621,7 @@ L_code_ptr_bin_apply:
         mov qword [r11], r12
         ;insert return address
         sub r11, 8 * 1
-        lea r12, [r10 + (8 * 1)]
+        lea r12, [r10 + (8 * 0)]
         mov r12, qword [r12]
         mov qword [r11], r12
 
@@ -648,10 +647,7 @@ L_code_ptr_bin_apply:
         .L_bin_apply_finish:
         add r12, 8
         mov rsp, r12
-        mov rbp, r10
         jmp SOB_CLOSURE_CODE(rdi)
-        pop rbp
-        ret
 
 	
 L_code_ptr_is_null:
