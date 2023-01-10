@@ -327,8 +327,8 @@ module Reader : READER = struct
   and nt_hex_digit str = 
     let nt1 = range 'a' 'f' in
     let nt1 = pack nt1 
-        (let w_asc = int_of_char 'W' in
-         fun ch -> (int_of_char ch) - w_asc) in
+        (let a_asc = int_of_char 'a' in
+         fun ch -> (int_of_char ch) - a_asc + 10) in
     (disj nt_digit nt1) str
   (* natural number *)
   and nt_nat str = 
@@ -488,9 +488,9 @@ module Reader : READER = struct
     nt1 str
   and nt_symbol str = 
     let nt1 = plus nt_symbol_char in
-    let nt1 = pack nt1 (fun symbol_name -> ScmSymbol(string_of_list symbol_name)) in
-    let nt2 = disj (followed_by nt1 (disj_list [nt_whitespace; char ')'; char '}'])) (not_followed_by nt1 nt_any) in
-    nt2 str
+    let nt2 = pack nt1 (fun l -> List.fold_left (fun str ch -> str ^ String.make 1 ch ) "" l) in
+    let symbs = pack nt2 (fun sym -> ScmSymbol(sym))  in
+    symbs str
   and nt_string_part_simple str =
     let nt1 =
       disj_list [unitify (char '"'); unitify (char '\\'); unitify (word "~~");
@@ -2050,7 +2050,6 @@ module Code_Generation : CODE_GENERATION = struct
         ^ (Printf.sprintf "\tjmp %s\n" label_copy_required_params)
         ^ (Printf.sprintf "%s:\t;move env, return address and rsp\n" label_finish_copy_required_params)
         ^ "\tsub r9, 8 * 1\n"
-        (* ^ "\tmov rdi, qword [rsp + (8 * 2)]\n" ; next line was ----- sub rdi, %d --- params'.length*)
         ^ (Printf.sprintf "\tmov rdi, %d\n" ((List.length params') + 1))
         ^ "\tmov qword [r9], rdi\t; push num of args in correct place\n"
         ^ "\tsub r9, 8 * 1\n"
@@ -2148,8 +2147,7 @@ module Code_Generation : CODE_GENERATION = struct
 
   let compile_scheme_string file_out user =
     let init = file_to_string "init.scm" in
-    (*important: REMOVED init ^ user*)
-    let source_code =init ^ user in
+    let source_code = init ^ user in
     let sexprs = (PC.star Reader.nt_sexpr source_code 0).found in
     let exprs = List.map Tag_Parser.tag_parse sexprs in
     let exprs' = List.map Semantic_Analysis.semantics exprs in
@@ -2163,7 +2161,6 @@ module Code_Generation : CODE_GENERATION = struct
 
 end;; (* end of Code_Generation struct *)
 
-let test str = Code_Generation.compile_scheme_string "testing/foo.asm" str;;
 (* end-of-input *)
 
 
