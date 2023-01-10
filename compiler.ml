@@ -1827,6 +1827,13 @@ module Code_Generation : CODE_GENERATION = struct
         raise X_not_yet_supported
       | ScmVarDef' (Var' (v, Bound (major, minor)), expr') ->
         raise X_not_yet_supported
+      | ScmVarSet'(Var' (v, Param minor),ScmBox' _) ->
+        "\tmov rdi, 8\n"
+        ^ "\tcall malloc\n"
+        ^ (Printf.sprintf "\tmov rdx, PARAM(%d)\n" minor)
+        ^ "\tmov qword [rax], rdx\n"
+        ^ (Printf.sprintf "\tmov PARAM(%d), rax\n" minor)
+        ^ "\tmov rax, sob_void\n"
       | ScmBox' (Var' (v, Param minor)) -> 
         "\tmov rdi, 8\n"
         ^ "\tcall malloc\n"
@@ -2142,7 +2149,7 @@ module Code_Generation : CODE_GENERATION = struct
   let compile_scheme_string file_out user =
     let init = file_to_string "init.scm" in
     (*important: REMOVED init ^ user*)
-    let source_code = init ^ user in
+    let source_code =init ^ user in
     let sexprs = (PC.star Reader.nt_sexpr source_code 0).found in
     let exprs = List.map Tag_Parser.tag_parse sexprs in
     let exprs' = List.map Semantic_Analysis.semantics exprs in
@@ -2153,8 +2160,10 @@ module Code_Generation : CODE_GENERATION = struct
   let compile_scheme_file file_in file_out =
     compile_scheme_string file_out (file_to_string file_in);;
 
+
 end;; (* end of Code_Generation struct *)
 
+let test str = Code_Generation.compile_scheme_string "testing/foo.asm" str;;
 (* end-of-input *)
 
 
