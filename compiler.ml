@@ -2113,7 +2113,6 @@ module Code_Generation : CODE_GENERATION = struct
         ^ "\tsub rdx, r11\n"
         ^ "\tshl rdx, 3\n"
         ^ "\tadd rsp, rdx\n"
-        (* ^ "\tlea rsp, [rbp + (rdx * 8)]\n" *)
         ^ "\tpop rbp\n"
         ^ "\tjmp SOB_CLOSURE_CODE(rax)\n"
     and runs params env exprs' =
@@ -2143,7 +2142,7 @@ module Code_Generation : CODE_GENERATION = struct
   let compile_scheme_string file_out user =
     let init = file_to_string "init.scm" in
     (*important: REMOVED init ^ user*)
-    let source_code = user in
+    let source_code = init ^ user in
     let sexprs = (PC.star Reader.nt_sexpr source_code 0).found in
     let exprs = List.map Tag_Parser.tag_parse sexprs in
     let exprs' = List.map Semantic_Analysis.semantics exprs in

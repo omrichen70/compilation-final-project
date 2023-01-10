@@ -570,4 +570,4 @@
           ((eq? (caar s) a) (car s))
           (else (assoc a (cdr s))))))
 
-;;; end-of-input
+;; end-of-input
